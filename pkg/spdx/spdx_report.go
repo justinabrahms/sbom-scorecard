@@ -2,15 +2,23 @@ package spdx
 
 import (
 	"fmt"
+	"os"
 	"strings"
+	"bytes"
+	"reflect"
+	"errors"
 
 	"github.com/ebay/sbom-scorecard/pkg/scorecard"
-	spdx_common "github.com/spdx/tools-golang/spdx/common"
+	"github.com/spdx/tools-golang/spdx"
+	"github.com/spdx/tools-golang/json"
+	"github.com/spdx/tools-golang/tagvalue"
+	"github.com/spdx/tools-golang/rdf"
 
 	"regexp"
 )
 
 var isNumeric = regexp.MustCompile(`\d`)
+var EmptyDocument = spdx.Document{}
 
 var missingPackages = scorecard.ReportValue{
 	Ratio:     0,
@@ -18,7 +26,7 @@ var missingPackages = scorecard.ReportValue{
 }
 
 type SpdxReport struct {
-	doc      Document
+	doc      spdx.Document
 	docError error
 	valid    bool
 
@@ -107,14 +115,14 @@ func (r *SpdxReport) CreationInfo() scorecard.ReportValue {
 	foundTool := false
 	hasVersion := false
 
-	if r.doc == nil || r.doc.GetCreationInfo() == nil {
+	if reflect.DeepEqual(r.doc, EmptyDocument) || r.doc.CreationInfo == nil {
 		return scorecard.ReportValue{
 			Ratio:     0,
 			Reasoning: "No creation info found",
 		}
 	}
 
-	for _, creator := range r.doc.GetCreationInfo().Creators {
+	for _, creator := range r.doc.CreationInfo.Creators {
 		if creator.CreatorType == "Tool" {
 			foundTool = true
 			if isNumeric.MatchString(creator.Creator) {
@@ -139,7 +147,7 @@ func (r *SpdxReport) CreationInfo() scorecard.ReportValue {
 		reasons = append(reasons, "The tool used to create the sbom does not have a version")
 	}
 
-	if r.doc.GetCreationInfo().Created == "" {
+	if r.doc.CreationInfo.Created == "" {
 		score -= .2
 		reasons = append(reasons, "There is no timestamp for when the sbom was created")
 	}
@@ -151,20 +159,40 @@ func (r *SpdxReport) CreationInfo() scorecard.ReportValue {
 
 }
 
+func LoadDocument(path string) (*spdx.Document, error) {
+	f, err := os.ReadFile(path)
+	if err != nil {
+		return nil, fmt.Errorf("opening SPDX document: %w", err)
+	}
+
+	doc, err := json.Read(bytes.NewReader(f))
+	if err != nil {
+		doc, err = tagvalue.Read(bytes.NewReader(f))
+		if err != nil {
+			return rdf.Read(bytes.NewReader(f))
+		}
+	}
+	if reflect.DeepEqual(doc, EmptyDocument) {
+		return doc, errors.New("Parsed the file, but was unable to find an SBOM in it")
+	}
+	return doc, err
+}
+
 func GetSpdxReport(filename string) scorecard.SbomReport {
 	sr := SpdxReport{}
 	doc, err := LoadDocument(filename)
 	if err != nil {
 		fmt.Printf("loading document: %v\n", err)
+		sr.docError = err
 		return &sr
 	}
 
-	// try to load the SPDX file's contents as a json file, version 2.2
-	sr.doc = doc
+	sr.doc = *doc
 	sr.docError = err
+
 	sr.valid = err == nil
-	if sr.doc != nil {
-		packages := sr.doc.GetPackages()
+	if !reflect.DeepEqual(sr.doc, EmptyDocument) {
+		packages := sr.doc.Packages
 
 		for _, p := range packages {
 			sr.totalPackages += 1
@@ -185,7 +213,7 @@ func GetSpdxReport(filename string) scorecard.SbomReport {
 			var foundCPE bool
 			var foundPURL bool
 			for _, ref := range p.PackageExternalReferences {
-				if !foundPURL && ref.RefType == spdx_common.TypePackageManagerPURL {
+				if !foundPURL && ref.RefType == spdx.PackageManagerPURL {
 					sr.hasPurl += 1
 					foundPURL = true
 				}
@@ -204,7 +232,7 @@ func GetSpdxReport(filename string) scorecard.SbomReport {
 			}
 		}
 
-		for _, file := range sr.doc.GetFiles() {
+		for _, file := range sr.doc.Files {
 			sr.totalFiles += 1
 			if len(file.Checksums) > 0 {
 				sr.hasFileDigest += 1

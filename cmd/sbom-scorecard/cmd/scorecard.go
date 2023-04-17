@@ -81,6 +81,8 @@ var scoreCmd = &cobra.Command{
 			if opts.debug {
 				print(r.Report())
 				print("==\n")
+				print(scorecard.Grade(r))
+				print("==\n")
 			}
 			scorecard.GradeTableFormat(r)
 		}

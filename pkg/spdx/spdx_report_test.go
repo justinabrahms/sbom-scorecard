@@ -60,6 +60,18 @@ Package Versions: 19/20
 Package Licenses: 18/20
 Creation Info: 15/15
 Total points: 78/100 or 78%`},
+	{"../../examples/invalid.json", `Spec Compliance: 0/25 (found stray characters at EOF)
+Package ID: 0/20 (No packages)
+Package Versions: 0/20 (No packages)
+Package Licenses: 0/20 (No packages)
+Creation Info: 0/15 (No creation info found)
+Total points: 0/100 or 0%`},
+	{"../../examples/photon.spdxtv.txt", `Spec Compliance: 25/25
+Package ID: 0/20 (0% have either purls (0%) or CPEs (0%))
+Package Versions: 19/20
+Package Licenses: 18/20
+Creation Info: 15/15
+Total points: 78/100 or 78%`},
 }
 
 func TestSpdxE2eGrade(t *testing.T) {
@@ -67,8 +79,10 @@ func TestSpdxE2eGrade(t *testing.T) {
 		res := GetSpdxReport(e.path)
 		report_text := scorecard.Grade(res)
 		if strings.Trim(report_text, " \n") != e.expected {
-			t.Errorf("GetSpdxReport(%v) = %v, expected %v",
+			t.Errorf("GetSpdxReport(%v)\nGot     : '%v'\nExpected: '%v'",
 				e.path, strings.Trim(report_text, " \n"), e.expected)
 		}
 	}
 }
+
+
